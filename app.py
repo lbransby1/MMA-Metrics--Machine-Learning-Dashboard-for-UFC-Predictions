@@ -1,7 +1,12 @@
-import gradio as gr
+import streamlit as st
 
 def greet(name):
-    return "Hello " + name + "!! :)"
+    return "Hello " + name + "!! :O"
 
-demo = gr.Interface(fn=greet, inputs="text", outputs="text")
-demo.launch()
+st.title("Greeting App")
+
+name = st.text_input("Enter your name")
+
+if st.button("Greet"):
+    greeting = greet(name)
+    st.write(greeting)
