@@ -1,2 +1,5 @@
 streamlit
 plotly
+shap
+bs4
+matplotlib
