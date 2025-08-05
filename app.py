@@ -16,7 +16,7 @@ st.title("UFC Fight Predictor Dashboard")
 st.markdown("Compare fighters, analyze stats, and predict outcomes using AI and SHAP explanations.")
 
 # Load and clean fighter data
-fighters_df = pd.read_csv("fighter_averages.csv")
+fighters_df = pd.read_csv("processed_data/fighter_averages.csv")
 fighters_df["Name"] = fighters_df["Name"].astype(str)
 fighter_names = sorted(fighters_df["Name"].dropna().unique())
 
