@@ -1,5 +1,5 @@
 ---
-title: MMAMetris
+title: MMAMetrics
 emoji: 👁
 colorFrom: Blue
 colorTo: pink
