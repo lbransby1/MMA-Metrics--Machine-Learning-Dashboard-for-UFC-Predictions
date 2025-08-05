@@ -1,7 +1,7 @@
 ---
-title: Ufc Prediction
+title: MMAMetris
 emoji: 👁
-colorFrom: purple
+colorFrom: Blue
 colorTo: pink
 sdk: streamlit
 sdk_version: 1.46.0
