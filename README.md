@@ -1,4 +1,4 @@
-# MMAMetrics
+# MMA Metrics - Machine Learning Dashboard for UFC Predictions
 
 MMA Metrics is a project focused on collecting and analyzing mixed martial arts (MMA) fight data and fighter statistics.
 
