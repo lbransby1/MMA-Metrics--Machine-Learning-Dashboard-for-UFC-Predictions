@@ -1,6 +1,6 @@
 # MMAMetrics
 
-MMAMetrics is a project focused on collecting and analyzing mixed martial arts (MMA) fight data and fighter statistics.
+MMA Metrics is a project focused on collecting and analyzing mixed martial arts (MMA) fight data and fighter statistics.
 
 ## Features
 
