@@ -1,7 +1,7 @@
 ---
 title: MMAMetrics
 emoji: 👁
-colorFrom: Blue
+colorFrom: blue
 colorTo: pink
 sdk: streamlit
 sdk_version: 1.46.0
