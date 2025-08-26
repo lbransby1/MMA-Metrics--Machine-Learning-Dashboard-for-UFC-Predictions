@@ -7,18 +7,26 @@ import requests
 import pickle
 from bs4 import BeautifulSoup
 from datetime import datetime
+import streamlit.components.v1 as components
 from comparison_table import render_comparison_table
+from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
 
 # Set wide layout and dashboard title
 st.set_page_config(layout="wide", page_title="UFC Fight Predictor Dashboard")
 st.title("UFC Fight Predictor Dashboard")
-st.markdown("Compare fighters, analyze stats, and predict outcomes using AI and SHAP explanations.")
+st.markdown("Compare fighters, analyze stats, and predict outcomes using ML")
+
+
 
 # Load and clean fighter data
 fighters_df = pd.read_csv("processed_data/fighter_averages.csv")
 fighters_df["Name"] = fighters_df["Name"].astype(str)
 fighter_names = sorted(fighters_df["Name"].dropna().unique())
+
+# Load fight styles
+styles_df = pd.read_csv("processed_data/fight_style_descriptions.csv")
+fighters_df = fighters_df.merge(styles_df, on="Name", how="left")
 
 # Convert DOB to Age
 fighters_df["DOB"] = pd.to_datetime(fighters_df["DOB"], errors='coerce')
@@ -107,6 +115,10 @@ def display_fighter_card(name, corner_color, image_width = 200):
 
         st.markdown(stats_html, unsafe_allow_html=True)
 
+    st.markdown(f"<p style='font-size:{font_size}px'><b>Style</b>: {fighter_row.get('Style','N/a')}</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size:{font_size}px'><b>Strengths</b>: {fighter_row.get('Strengths','N/a')}</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size:{font_size}px'><b>Weaknesses</b> : {fighter_row.get('Weaknesses','N/a')}</p>", unsafe_allow_html=True)
+
 # Fighter profile images
 col1, col2 = st.columns(2)
 with col1:
@@ -147,6 +159,11 @@ f2_ratings = roster_ratings.loc[f2_row]
 f1_raw = fighters_df.loc[f1_row, avg_stats]
 f2_raw = fighters_df.loc[f2_row, avg_stats]
 comparison_df = pd.DataFrame({fighter_1: f1_raw.values, "Stat": avg_stats, fighter_2: f2_raw.values})
+# Round all numeric columns to 2 decimal places
+# Only round numeric columns, keep 'Stat' as-is
+numeric_cols = [c for c in comparison_df.columns if c != "Stat"]
+comparison_df[numeric_cols] = comparison_df[numeric_cols].applymap(lambda x: f"{x:.2f}")
+
 
 # Stat Highlighting
 
@@ -161,25 +178,41 @@ def highlight_row(row):
     ]
 
 st.markdown("---")
-st.subheader("Fighter Stat Comparison")
-render_comparison_table(comparison_df, highlight_row)
 
-# Radar chart
-st.markdown("---")
-st.subheader("Fighter Performance Radar Chart")
-fig = go.Figure()
-fig.add_trace(go.Scatterpolar(r=f1_ratings, theta=avg_stats, fill='toself', name=fighter_1, line=dict(color='crimson')))
-fig.add_trace(go.Scatterpolar(r=f2_ratings, theta=avg_stats, fill='toself', name=fighter_2, line=dict(color='royalblue')))
-fig.update_layout(
-    polar=dict(
-        bgcolor='rgba(0,0,0,0)',
-        radialaxis=dict(visible=True, range=[0, 10], tickvals=[0, 2.5, 5, 7.5, 10]),
-        angularaxis=dict(tickfont=dict(size=13))
-    ),
-    showlegend=True,
-    height=600
-)
-st.plotly_chart(fig, use_container_width=True)
+# Create two columns
+col_table, col_radar = st.columns([1, 1])  # Equal width, can adjust ratio if needed
+
+with col_table:
+    st.markdown("### Stat Comparison")
+    render_comparison_table(comparison_df, highlight_row)  # Your styled comparison table
+
+with col_radar:
+    st.markdown("### Performance Radar Chart")
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=f1_ratings, theta=avg_stats, fill='toself',
+        name=fighter_1, line=dict(color='crimson')
+    ))
+    fig.add_trace(go.Scatterpolar(
+        r=f2_ratings, theta=avg_stats, fill='toself',
+        name=fighter_2, line=dict(color='royalblue')
+    ))
+    fig.update_layout(
+        polar=dict(
+            bgcolor='rgba(0,0,0,0)',
+            radialaxis=dict(
+                visible=True, range=[0, 10], 
+                tickvals=[0, 2.5, 5, 7.5, 10],
+                tickfont=dict(size=14)  # radial axis labels
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=16)  # stats labels around the chart
+            )
+        ),
+        showlegend=False,
+        height=450  # smaller than before
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 # Prediction
 @st.cache_resource
@@ -188,114 +221,290 @@ def load_model():
         return pickle.load(f)
 model = load_model()
 
+@st.cache_resource
+def load_models():
+    models = {}
+    model_names = [
+        "RandomForest_Opt",
+        "XGBoost_Opt",
+        "LightGBM_Opt",
+        "CatBoost_Opt",
+        "HistGB_Opt",
+        "Votingclf",
+        "Stacking",
+    ]
+    for name in model_names:
+        path = f"models/{name}_model.pkl"
+        with open(path, "rb") as f:
+            models[name] = pickle.load(f)
+    return models
+
+models = load_models()
+
+with open("models/feature_columns.pkl", "rb") as f:
+    feature_columns = pickle.load(f)
+
+def swap_averaged_all(models, X_orig, X_swapped, y_true=None, fighters=None):
+    """
+    Returns a dictionary of results for each model, including:
+    - pre-swap probabilities
+    - swap-averaged probabilities
+    - predicted winner
+    - accuracy (if y_true provided)
+    """
+    results = {}
+    for name, model in models.items():
+        # Predict probabilities
+        orig_probs = model.predict_proba(X_orig)
+        swap_probs = model.predict_proba(X_swapped)
+        swap_probs_corrected = swap_probs[:, [1, 0]]  # flip to align with original
+
+        # Swap-averaged probabilities
+        final_probs = (orig_probs + swap_probs_corrected) / 2
+        print(name, "og prob", orig_probs, "swap prob:", swap_probs, final_probs)
+        # Single fight winner
+        if fighters and final_probs.shape[0] == 1:
+            f1, f2 = fighters
+            winner = f1 if final_probs[0][0] > final_probs[0][1] else f2
+            results[name] = {
+                "PreSwapProbs": orig_probs[0],
+                "Probs": final_probs[0],
+                "Winner": winner
+            }
+        else:
+            # Dataset
+            y_pred_final = np.argmax(final_probs, axis=1)
+            acc = None
+            if y_true is not None:
+                acc = (y_pred_final == y_true).mean()
+            results[name] = {
+                "PreSwapProbs": orig_probs,
+                "Probs": final_probs,
+                "Accuracy": acc
+            }
+    return results
+
+# fighter_1 = "Jack Della Maddalena"
+# fighter_2 = "Ilia Topuria"
+
+# --- Save the feature order from training ---
+
 def create_features_from_df(f1, f2, df):
     red = df[df["Name"] == f1].drop(columns=["Name", "DOB"], errors='ignore').iloc[0]
     blue = df[df["Name"] == f2].drop(columns=["Name", "DOB"], errors='ignore').iloc[0]
     red.index = ["red_" + col for col in red.index]
     blue.index = ["blue_" + col for col in blue.index]
     return pd.concat([red, blue]).to_frame().T
-
-
-
-original_X = create_features_from_df(fighter_1, fighter_2, fighters_df)
-swapped_X = create_features_from_df(fighter_2, fighter_1, fighters_df)
-numeric_cols = [
-    'red_StrikesLandedPerMin', 'red_StrikesAbsorbedPerMin', 'red_TakedownsPer15Min', 'red_SubmissionsPer15Min',
-    'red_ControlPer15Min', 'red_StrikingAccuracyPct', 'red_StrikeDefencePct', 'red_TakedownAccuracyPct', 'red_TakedownDefencePct',
-    'blue_StrikesLandedPerMin', 'blue_StrikesAbsorbedPerMin', 'blue_TakedownsPer15Min', 'blue_SubmissionsPer15Min',
-    'blue_ControlPer15Min', 'blue_StrikingAccuracyPct', 'blue_StrikeDefencePct', 'blue_TakedownAccuracyPct', 'blue_TakedownDefencePct',
-    'red_OpponentTakedownsPer15Min', 'blue_OpponentTakedownsPer15Min',
-    'red_Height', 'red_Weight', 'red_Reach', 'blue_Height', 'blue_Weight', 'blue_Reach', 'red_Elo', 'blue_Elo', 'red_Age', 'blue_Age']
-
-for col in numeric_cols:
-    if col in original_X.columns:
-        original_X[col] = pd.to_numeric(original_X[col], errors='coerce')
-        swapped_X[col] = pd.to_numeric(swapped_X[col], errors='coerce')
-
-categorical_cols = ["red_Stance", "blue_Stance"]
-for col in categorical_cols:
-    original_X[col] = original_X[col].astype("category")
-    swapped_X[col] = swapped_X[col].astype("category")
-
-
-import numpy as np
-
-def check_corner_bias(original_winner, swapped_winner, original_proba, swapped_proba, threshold=0.10):
-    # 1) Numeric confidence drop\
-    conf_orig = np.max(original_proba)
-    conf_swap = np.max(swapped_proba)
-    confidence_drop = abs(conf_orig - conf_swap)
     
-    # 2) Was the drop “significant”?
-    significant_drop = confidence_drop > threshold
-    
-    # 3) Did the predicted class flip?
-    prediction_flipped =  original_winner!= swapped_winner
-    
-    return {
-        "confidence_drop": confidence_drop,
-        "significant_drop": significant_drop,
-        "prediction_flipped": prediction_flipped,
-
+st.markdown(
+    """
+    <style>
+    .stButton > button {
+        transform: scale(1.5);  /* make button + text 1.5x bigger */
+        font-weight: bold;
+        width: 70%;
+        margin: 0 auto;  /* centers the button */
+        display: block;  /* required for margin auto to work */
     }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
 
+# Button
+predict_button = st.button("Predict")
 
-#original_X = original_X.fillna(0)
 
-if st.button("Predict Winner"):
-    original_X = original_X.reindex(columns=model.feature_names_in_, fill_value=0)
-    original_pred = model.predict(original_X)[0]
-    original_confidence = model.predict_proba(original_X)[0].max()
-    original_winner = fighter_1 if original_pred == 0 else fighter_2
+if predict_button:
+    fighter_1_sel = st.session_state.get("Red Corner", fighter_1)
+    fighter_2_sel = st.session_state.get("Blue Corner", fighter_2)
+    # Build feature rows for both orderings
+    original_X = create_features_from_df(fighter_1_sel, fighter_2_sel, fighters_df)
+    swapped_X = create_features_from_df(fighter_2_sel, fighter_1_sel, fighters_df)
 
-    swapped_X = swapped_X.reindex(columns=model.feature_names_in_, fill_value=0)
-    swapped_pred = model.predict(swapped_X)[0]
-    swapped_confidence = model.predict_proba(swapped_X)[0].max()
-    swapped_winner = fighter_1 if swapped_pred == 0 else fighter_2
+    # # Ensure numeric cols are numeric
+    numeric_cols = [
+        'red_StrikesLandedPerMin', 'red_StrikesAbsorbedPerMin', 'red_TakedownsPer15Min', 'red_SubmissionsPer15Min',
+        'red_ControlPer15Min', 'red_StrikingAccuracyPct', 'red_StrikeDefencePct', 'red_TakedownAccuracyPct', 'red_TakedownDefencePct',
+        'blue_StrikesLandedPerMin', 'blue_StrikesAbsorbedPerMin', 'blue_TakedownsPer15Min', 'blue_SubmissionsPer15Min',
+        'blue_ControlPer15Min', 'blue_StrikingAccuracyPct', 'blue_StrikeDefencePct', 'blue_TakedownAccuracyPct', 'blue_TakedownDefencePct',
+        'red_OpponentTakedownsPer15Min', 'blue_OpponentTakedownsPer15Min',
+        'red_Height', 'red_Weight', 'red_Reach', 'blue_Height', 'blue_Weight', 'blue_Reach',
+        'red_Elo', 'blue_Elo', 'red_Age', 'blue_Age'
+    ]
+    for col in numeric_cols:
+        if col in original_X.columns:
+            original_X[col] = pd.to_numeric(original_X[col], errors='coerce')
+            swapped_X[col]  = pd.to_numeric(swapped_X[col], errors='coerce')
 
-    st.success(f"Original Prediction: 🏆 {original_winner} would win with confidence **{original_confidence:.2%}**")
-    st.success(f"Swapped Prediction:  🏆 {swapped_winner} would win with confidence **{swapped_confidence:.2%}**")
+    categorical_cols = ["red_Stance", "blue_Stance"]
+
+    # One-hot encode all categorical columns
+    original_X = pd.get_dummies(original_X, columns=categorical_cols)
+    swapped_X = pd.get_dummies(swapped_X, columns=categorical_cols)
+
+    original_X = original_X.reindex(columns=feature_columns, fill_value=0)
+    swapped_X = swapped_X.reindex(columns=feature_columns, fill_value=0)
+
+    print(original_X.head())
+    # Run ensemble predictions
+    results = swap_averaged_all(models, original_X, swapped_X, fighters=(fighter_1, fighter_2))
+
+    X_test = pd.read_csv("processed_data/X_test.csv")
+    y_test = pd.read_csv("processed_data/y_test.csv").values.ravel()  # flatten if needed
+
+    # Evaluate each model's accuracy on test data once
+    accuracies = {}
+    for name, model in models.items():
+        y_pred = model.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        accuracies[name] = acc
+
+
+    # Tabulate results
+    rows = []
+    for name, res in results.items():
+        prob_red, prob_blue = res["Probs"]
+        rows.append({
+            "Model": name,
+            f"{fighter_1} Win %": f"{prob_red:.2%}",
+            f"{fighter_2} Win %": f"{prob_blue:.2%}",
+            "Predicted Winner": res["Winner"],
+            "Test Accuracy": f"{accuracies[name]:.2%}"
+        })
 
     
+    results_df = pd.DataFrame(rows)
+    
 
-    st.write("### Bias Test: Swap Fighter Corners")
-
-    check = check_corner_bias(original_winner, swapped_winner, original_confidence, swapped_confidence, threshold=0.10)
-
-    if check["prediction_flipped"]:
-        st.error("Prediction flipped when corners were swapped — potential corner bias!")
-    elif check["significant_drop"]:
-        st.warning("Confidence dropped by over 10% when corners were swapped — potential bias!")
-    else:
-        st.success("Prediction stable and no large confidence drop when corners swapped.")
-
-
-    st.subheader("SHAP Model Explanation")
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer(original_X)
-    sample = shap_values[0]
-
-    indices = np.argsort(np.abs(sample.values))[::-1][:15]
-    feature_names = np.array(sample.feature_names)[indices]
-    shap_vals = sample.values[indices]
-    input_vals = original_X.iloc[0][feature_names].values
-    formatted_labels = [
-    f"{name} ({float(val):.2f})" if isinstance(val, (int, float)) or val.replace('.', '', 1).isdigit() else f"{name} ({val})"
-    for name, val in zip(feature_names, input_vals)
-]
+    # Convert to HTML
+    def color_win_percent(val):
+        # Convert string to float if needed
+        if isinstance(val, str):
+            val = val.strip('%')  # Remove %
+            try:
+                val = float(val) / 100  # convert to 0-1
+            except:
+                return ""
+        if val >= 60:
+            return "color: ##3ffc3f; font-weight:bold;"  # very green
+        elif val >= 0.55:
+            return "color: #80ff80; font-weight:bold;"  # green
+        elif val >= 0.50:
+            return "color: #b8ffb8; font-weight:bold;"  # green ish
+        elif val >= 0.45:
+            return "color: #ffabab; font-weight:bold;"  # red
+        elif val >= 0.40:
+            return "color: #ff7070; font-weight:bold;"  # red
+        elif val <0.40:
+            return "color: #fa3939; font-weight:bold;"  # very red
+        else:
+            return ""
 
 
-    colors = ['#1f77b4' if val > 0 else '#d62728' for val in shap_vals]
+    html_table = results_df.to_html(index=False, escape=False)
 
-    fig, ax = plt.subplots(figsize=(9, 6))
-    y_pos = np.arange(len(formatted_labels))
-    bars = ax.barh(y_pos, shap_vals, color=colors)
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(formatted_labels)
-    ax.invert_yaxis()
-    ax.set_title("SHAP Feature Impact with Input Values")
-    ax.set_xlabel("SHAP value (impact on model output)")
-    st.pyplot(fig)
+    # Apply CSS manually
+    html_string = f"""
+    <html>
+    <head>
+    <style>
+        body {{
+            background-color: #1e1e1e;
+            color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 16px;
+        }}
+        th, td {{
+            padding: 10px;
+            border: 1px solid #444;
+            text-align: center;
+        }}
+        th {{
+            background-color: #333;
+            color: #fff;
+        }}
+        tr:nth-child(even) {{
+            background-color: #2a2a2a;
+        }}
+        tr:nth-child(odd) {{
+            background-color: #242424;
+        }}
+    </style>
+    </head>
+    <body>
+    <table>
+        <thead>
+            <tr>
+                {''.join(f'<th>{c}</th>' for c in results_df.columns)}
+            </tr>
+        </thead>
+        <tbody>
+    """
+
+    for _, row in results_df.iterrows():
+        html_string += "<tr>"
+        for col in results_df.columns:
+            val = row[col]
+
+            # Handle percentages for fighters
+            if col in [f"{fighter_1} Win %", f"{fighter_2} Win %"]:
+                style = color_win_percent(val)
+                # Convert string like "60.00%" to float
+                if isinstance(val, str):
+                    val = val.strip('%')
+                    val = float(val) / 100
+                html_string += f'<td style="{style}">{val:.2%}</td>'
+
+            # Handle Test Accuracy
+            elif col == "Test Accuracy":
+                # Convert string to float if necessary
+                if isinstance(val, str):
+                    val = val.strip('%')
+                    val = float(val) / 100
+                html_string += f'<td>{val:.2%}</td>'
+            else:
+                html_string += f'<td>{val}</td>'
+        html_string += "</tr>"
+
+
+    html_string += "</tbody></table></body></html>"
+    
+
+    stack_result = results.get("Stacking", None)
+    if stack_result:
+        prob_red, prob_blue = stack_result["Probs"]
+        winner = stack_result["Winner"]
+
+        # Nice styled "Winner Winner"
+        st.markdown(
+            f"""
+            <div style="
+                background-color:#222;
+                color:#fff;
+                border: 2px solid #444;
+                border-radius: 12px;
+                padding: 20px;
+                text-align: center;
+                font-size: 28px;
+                font-weight: bold;
+                margin-bottom: 20px;">
+                🏆 Winner Prediction: <span style="color:#3fcf5f">{winner}</span><br>
+                Confidence: {max(prob_red, prob_blue):.2%}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    # Render in Streamlit
+    components.html(html_string, height=400, scrolling=False)
+
+
+
+
 
