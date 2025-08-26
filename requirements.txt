@@ -1,6 +1,14 @@
 streamlit
+pandas
+numpy
+scikit-learn
 plotly
-shap
 bs4
-xgboost
+requests
 matplotlib
+xgboost
+lightgbm
+catboost
+xgboost
+
+

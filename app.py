@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import shap
 import plotly.graph_objects as go
 import requests
 import pickle
@@ -215,12 +214,6 @@ with col_radar:
     st.plotly_chart(fig, use_container_width=True)
 
 # Prediction
-@st.cache_resource
-def load_model():
-    with open("models/ufc_fight_predictor.pkl", "rb") as f:
-        return pickle.load(f)
-model = load_model()
-
 @st.cache_resource
 def load_models():
     models = {}
