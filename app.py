@@ -13,8 +13,24 @@ import matplotlib.pyplot as plt
 
 # Set wide layout and dashboard title
 st.set_page_config(layout="wide", page_title="UFC Fight Predictor Dashboard")
-st.title("UFC Fight Predictor Dashboard")
-st.markdown("Compare fighters, analyze stats, and predict outcomes using ML")
+st.markdown(
+    """
+    <h2 style='text-align:center; color:white; margin:0; padding:0;'>
+        🥊 UFC Fight Predictor Dashboard
+    </h2>
+    <h5 style='text-align:center; font-weight:normal; color:#555;'>
+        Compare fighters, break down stats, and predict outcomes with <b>Machine Learning</b>
+    </h5>
+    <p style='text-align:center;'>
+        <a href="https://github.com/lbransby1/MMA-Metrics--Machine-Learning-Dashboard-for-UFC-Predictions" target="_blank" style="text-decoration:none; color:#1f77b4; font-size:16px;">
+            🔗 View the GitHub here
+        </a>
+    </p><hr>
+    """,
+    unsafe_allow_html=True
+)
+
+
 
 
 
@@ -79,12 +95,11 @@ with st.sidebar:
         st.sidebar.success("Developer mode is ON")
 
 
-
-def display_fighter_card(name, corner_color, image_width = 200):
+def display_fighter_card(name, corner_color, image_width=200):
     import streamlit as st
     fighter_row = fighters_df[fighters_df["Name"] == name].iloc[0]
     # Map color to label for display
-    color_label = "Red Corner" if corner_color == "red" else "Blue Corner"
+    color_label = f"{name}" 
 
     # Extract data
     name = fighter_row["Name"]
@@ -98,27 +113,30 @@ def display_fighter_card(name, corner_color, image_width = 200):
         "Wins": fighter_row.get("Wins", "N/A"),
         "Losses": fighter_row.get("Losses", "N/A")
     }
-    font_size = max(12, int(image_width * 0.11)) 
-    st.markdown(f"### {color_label}")
+    font_size = 16
+
+    # Corner label with spacing
+    st.markdown(f"<h3 style='margin-bottom:12px; padding-left:10px'>{color_label}</h3>", unsafe_allow_html=True)
+
     # Create two columns: one for image, one for stats
-    col1, col2 = st.columns([1, 2])  # Adjust width ratio as needed
+    col1, col2 = st.columns([1, 1.5], gap="medium")  # Add medium gap between cols
 
     with col1:
-        st.image(image_url, width=200, caption=name)
+        st.image(image_url, width=image_width, caption=name)
 
     with col2:
-        # Use HTML for font size control
-        stats_html = ""
+        # Use HTML for font size + spacing
+        stats_html = "<div style='line-height:1.8'>"  # add vertical spacing between rows
         for stat_name, stat_value in details.items():
-            stats_html += f"<div style='font-size:{font_size}px; margin-bottom:4px'>{stat_name}:<b> {stat_value}</b></div>"
-
+            stats_html += f"<div style='font-size:{font_size}px; margin-bottom:6px'>{stat_name}: <b>{stat_value}</b></div>"
+        stats_html += "</div>"
         st.markdown(stats_html, unsafe_allow_html=True)
 
-    st.markdown(f"<p style='font-size:{font_size}px'><b>Style</b>: {fighter_row.get('Style','N/a')}</p>", unsafe_allow_html=True)
-    st.markdown(f"<p style='font-size:{font_size}px'><b>Strengths</b>: {fighter_row.get('Strengths','N/a')}</p>", unsafe_allow_html=True)
-    st.markdown(f"<p style='font-size:{font_size}px'><b>Weaknesses</b> : {fighter_row.get('Weaknesses','N/a')}</p>", unsafe_allow_html=True)
+    # Extra spacing between sections
+    st.markdown(f"<p style='font-size:{font_size}px; margin-top:0px'><b>Style</b>: {fighter_row.get('Style','N/a')}</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size:{font_size}px; margin-top:0px'><b>Strengths</b>: {fighter_row.get('Strengths','N/a')}</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size:{font_size}px; margin-top:4px'><b>Weaknesses</b>: {fighter_row.get('Weaknesses','N/a')}</p>", unsafe_allow_html=True)
 
-# Fighter profile images
 col1, col2 = st.columns(2)
 with col1:
     display_fighter_card(fighter_1, corner_color="red")
@@ -182,11 +200,13 @@ st.markdown("---")
 col_table, col_radar = st.columns([1, 1])  # Equal width, can adjust ratio if needed
 
 with col_table:
-    st.markdown("### Stat Comparison")
+    st.markdown("<h3 style='text-align:center;'>Stat Comparison</h3><br><br>", unsafe_allow_html=True)
+
     render_comparison_table(comparison_df, highlight_row)  # Your styled comparison table
 
 with col_radar:
-    st.markdown("### Performance Radar Chart")
+    st.markdown("<h3 style='text-align:center;'>Performance Radar</h3>", unsafe_allow_html=True)
+
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
         r=f1_ratings, theta=avg_stats, fill='toself',
@@ -205,7 +225,7 @@ with col_radar:
                 tickfont=dict(size=14)  # radial axis labels
             ),
             angularaxis=dict(
-                tickfont=dict(size=16)  # stats labels around the chart
+                tickfont=dict(size=14)  # stats labels around the chart
             )
         ),
         showlegend=False,
@@ -293,9 +313,9 @@ st.markdown(
     """
     <style>
     .stButton > button {
-        transform: scale(1.5);  /* make button + text 1.5x bigger */
+        transform: scale(1);  /* make button + text 1.5x bigger */
         font-weight: bold;
-        width: 70%;
+        width: 100%;
         margin: 0 auto;  /* centers the button */
         display: block;  /* required for margin auto to work */
     }
@@ -412,7 +432,7 @@ if predict_button:
         table {{
             width: 100%;
             border-collapse: collapse;
-            font-size: 16px;
+            font-size: 14px;
         }}
         th, td {{
             padding: 10px;
@@ -485,7 +505,7 @@ if predict_button:
                 border-radius: 12px;
                 padding: 20px;
                 text-align: center;
-                font-size: 28px;
+                font-size: 20px;
                 font-weight: bold;
                 margin-bottom: 20px;">
                 🏆 Winner Prediction: <span style="color:#3fcf5f">{winner}</span><br>
