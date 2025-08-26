@@ -29,7 +29,7 @@ def render_comparison_table(comparison_df, highlight_func):
         border: 1px solid #444;
         padding: 8px 12px;
         text-align: center;
-        font-size: 14px;
+        font-size: 12px;
         vertical-align: middle;
         word-wrap: break-word;
     }}
