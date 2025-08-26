@@ -44,23 +44,9 @@ streamlit run app.py
 👉 The dashboard should now be live at http://localhost:8501.
 
 
-## ▶️ Usage
-
-Run the Streamlit app:
-
-```bash
-streamlit run app.py
-```
-
-Open the dashboard at `http://localhost:8501/`
-
----
-
 ## 🌍 Live Demo
 
-👉 [View the Dashboard](https://ufc-fight-predictor.streamlit.app/)
-
-👉 [View the GitHub Repo](https://github.com/lbransby1/UFC-Fight-Predictor)
+👉 [View the Dashboard](https://huggingface.co/spaces/lukebransby/MMAMetrics?logs=container/)
 
 ---
 
