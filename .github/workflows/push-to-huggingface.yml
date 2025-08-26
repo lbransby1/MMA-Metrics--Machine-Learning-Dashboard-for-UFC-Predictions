@@ -8,33 +8,39 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          lfs: true   # <-- ensure LFS files are fetched
 
-    - name: Set up Git
-      run: |
-        git config --global user.email "luke.bransby15@gmail.com"
-        git config --global user.name "Luke Bransby"
+      - name: Set up Git
+        run: |
+          git config --global user.email "luke.bransby15@gmail.com"
+          git config --global user.name "Luke Bransby"
 
-    - name: Swap README files for Hugging Face
-      run: |
-        # Rename GitHub README to save it
-        if [ -f README.md ]; then
-          mv README.md README_gh.md
-        fi
+      - name: Swap README files for Hugging Face
+        run: |
+          if [ -f README.md ]; then
+            mv README.md README_gh.md
+          fi
+          if [ -f README_hf.md ]; then
+            mv README_hf.md README.md
+          fi
 
-        # Rename Hugging Face README into place
-        if [ -f README_hf.md ]; then
-          mv README_hf.md README.md
-        fi
+      - name: Install Git LFS
+        run: git lfs install
 
-    - name: Push to Hugging Face
-      env:
-        HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      run: |
-        git remote add hf https://huggingface.co/spaces/lukebransby/MMAMetrics
-        git add README.md README_gh.md
-        git commit -m "Swap README for Hugging Face" || echo "No changes to commit"
-        git push --force https://lukebransby:$HF_TOKEN@huggingface.co/spaces/lukebransby/MMAMetrics main
+      - name: Track model files with Git LFS
+        run: |
+          git lfs track "*.pkl"
+          git add .gitattributes
+
+      - name: Add files and push to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git remote add hf https://huggingface.co/spaces/lukebransby/MMAMetrics
+          git add README.md README_gh.md models/*.pkl
+          git commit -m "Swap README and update LFS models" || echo "No changes to commit"
+          git push --force https://lukebransby:$HF_TOKEN@huggingface.co/spaces/lukebransby/MMAMetrics main
